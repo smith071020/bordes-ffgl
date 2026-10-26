@@ -1,0 +1,54 @@
+name: Compilar Bordes.dll
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Descargar este repositorio
+        uses: actions/checkout@v4
+        with:
+          path: mi-plugin
+
+      - name: Descargar el SDK oficial de FFGL de Resolume
+        shell: bash
+        run: |
+          git clone https://github.com/resolume/ffgl.git ffgl
+          cd ffgl
+          git checkout 5b6e07840277df9ec35a228b9eb067636316350f
+
+      - name: Copiar el plugin dentro del SDK
+        shell: bash
+        run: |
+          mkdir -p ffgl/source/plugins/Bordes
+          cp mi-plugin/source/plugins/Bordes/* ffgl/source/plugins/Bordes/
+          cp mi-plugin/build/windows/Bordes.vcxproj ffgl/build/windows/
+
+      - name: Configurar MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Compilar (Release x64)
+        shell: pwsh
+        run: |
+          msbuild ffgl\build\windows\Bordes.vcxproj /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /p:WindowsTargetPlatformVersion=10.0 /m
+
+      - name: Comprobar que la DLL existe y exporta plugMain
+        shell: pwsh
+        run: |
+          $dll = "ffgl\binaries\x64\Release\Bordes.dll"
+          if (-not (Test-Path $dll)) { throw "No se genero Bordes.dll" }
+          Get-Item $dll | Format-List Name, Length
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $dll))
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -notmatch "plugMain") { throw "La DLL no exporta plugMain" }
+          Write-Host "OK: Bordes.dll generada y exporta plugMain"
+
+      - name: Subir Bordes.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bordes-dll
+          path: ffgl/binaries/x64/Release/Bordes.dll
+          if-no-files-found: error
